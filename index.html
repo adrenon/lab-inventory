@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BBP Lab Inventory</title>
+    <style>
+        :root {
+            --primary: #2c3e50;
+            --secondary: #27ae60;
+            --accent: #2980b9;
+            --danger: #e74c3c;
+            --light: #f4f7f6;
+        }
+
+        body { font-family: 'Segoe UI', sans-serif; background: var(--light); margin: 0; padding: 20px; }
+        .container { max-width: 1100px; margin: auto; background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        
+        header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid var(--light); padding-bottom: 1rem; margin-bottom: 1rem; }
+        
+        .tabs { display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 2px solid var(--light); padding-bottom: 10px; }
+        .tab-btn { padding: 10px 20px; border: none; background: #eee; cursor: pointer; border-radius: 5px; font-weight: bold; }
+        .tab-btn.active { background: var(--primary); color: white; }
+
+        .controls { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 2rem; background: #f9f9f9; padding: 15px; border-radius: 8px; }
+        input, select { padding: 10px; border: 1px solid #ddd; border-radius: 4px; flex: 1; min-width: 150px; }
+        
+        button { cursor: pointer; padding: 10px 15px; border: none; border-radius: 4px; transition: 0.3s; }
+        .btn-add { background: var(--secondary); color: white; min-width: 120px; }
+        .btn-add:hover { background: #219150; }
+
+        table { width: 100%; border-collapse: collapse; margin-top: 1rem; font-size: 0.9rem; }
+        th { text-align: left; background: var(--light); padding: 12px; border-bottom: 2px solid #ddd; }
+        td { padding: 12px; border-bottom: 1px solid #eee; }
+
+        .stock-badge { padding: 4px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: bold; }
+        .low { background: #ffebee; color: var(--danger); }
+        .ok { background: #e8f5e9; color: var(--secondary); }
+
+        .qty-controls button { background: #eee; font-weight: bold; width: 25px; height: 25px; padding: 0; }
+        .qty-controls span { margin: 0 8px; font-family: monospace; }
+        
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>🔬 BBP Lab Inventory</h1>
+        <div id="user-status" style="font-size: 0.8rem;">Status: 🟢 Connected</div>
+    </header>
+
+    <div class="tabs">
+        <button class="tab-btn active" onclick="switchTab('reagents')">Reagents & Supplies</button>
+        <button class="tab-btn" onclick="switchTab('plasmids')">Plasmids/Primers</button>
+        <button class="tab-btn" onclick="switchTab('equipment')">Lab Equipment</button>
+    </div>
+
+    <div id="reagents-section">
+        <div class="controls">
+            <input type="text" id="itemName" placeholder="Item Name">
+            <input type="text" id="catalogNum" placeholder="Catalog #">
+            <select id="category">
+                <option value="Reagents">Reagents</option>
+                <option value="Plasticware">Plasticware</option>
+                <option value="Kits">Kits</option>
+            </select>
+            <button class="btn-add" onclick="addItem('reagents')">+ Add Reagent</button>
+        </div>
+        <table id="reagentsTable">
+            <thead>
+                <tr><th>Name</th><th>Category</th><th>Catalog #</th><th>Stock</th><th>Status</th><th>Actions</th></tr>
+            </thead>
+            <tbody id="reagentsBody"></tbody>
+        </table>
+    </div>
+
+    <div id="plasmids-section" class="hidden">
+        <div class="controls">
+            <input type="text" id="pSmedId" placeholder="SMED ID">
+            <input type="text" id="pGeneName" placeholder="Gene Name">
+            <input type="text" id="pConstruct" placeholder="Construct">
+            <input type="text" id="pAntibiotic" placeholder="Resistance">
+            <input type="text" id="pLocation" placeholder="Location (e.g. Box A1)">
+            <button class="btn-add" onclick="addItem('plasmids')">+ Add Plasmid</button>
+        </div>
+        <table id="plasmidsTable">
+            <thead>
+                <tr><th>SMED ID</th><th>Gene Name</th><th>Construct</th><th>Resistance</th><th>Location</th><th>Actions</th></tr>
+            </thead>
+            <tbody id="plasmidsBody"></tbody>
+        </table>
+    </div>
+
+    <div id="equipment-section" class="hidden">
+        <div class="controls">
+            <input type="text" id="eqName" placeholder="Equipment Name">
+            <input type="text" id="eqSerial" placeholder="Serial # / ID">
+            <input type="text" id="eqLocation" placeholder="Room/Bench">
+            <button class="btn-add" onclick="addItem('equipment')">+ Add Equipment</button>
+        </div>
+        <table id="equipmentTable">
+            <thead>
+                <tr><th>Equipment</th><th>Serial/ID</th><th>Location</th><th>Actions</th></tr>
+            </thead>
+            <tbody id="equipmentBody"></tbody>
+        </table>
+    </div>
+</div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import { getDatabase, ref, set, onValue, update, remove } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+
+    const firebaseConfig = {
+        apiKey: "AIzaSyBQH4A3W0tcVVF9RSj8y51d3WxKGITrNnU",
+        authDomain: "lab-inventory-8b584.firebaseapp.com",
+        projectId: "lab-inventory-8b584",
+        storageBucket: "lab-inventory-8b584.firebasestorage.app",
+        messagingSenderId: "768314798306",
+        appId: "1:768314798306:web:405d5dec243cb66105aebb",
+        measurementId: "G-VG4ZHC2MJ4",
+        databaseURL: "https://lab-inventory-8b584-default-rtdb.firebaseio.com"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    // Tab Switching Logic
+    window.switchTab = function(tabName) {
+        document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+        document.querySelector(`[onclick="switchTab('${tabName}')"]`).classList.add('active');
+        
+        document.getElementById('reagents-section').classList.add('hidden');
+        document.getElementById('plasmids-section').classList.add('hidden');
+        document.getElementById('equipment-section').classList.add('hidden');
+        
+        document.getElementById(`${tabName}-section`).classList.remove('hidden');
+    };
+
+    // Data Listeners
+    onValue(ref(db, 'reagents'), (snap) => render('reagentsBody', snap.val(), 'reagents'));
+    onValue(ref(db, 'plasmids'), (snap) => render('plasmidsBody', snap.val(), 'plasmids'));
+    onValue(ref(db, 'equipment'), (snap) => render('equipmentBody', snap.val(), 'equipment'));
+
+    function render(elementId, data, type) {
+        const tbody = document.getElementById(elementId);
+        tbody.innerHTML = '';
+        if (!data) return;
+
+        Object.values(data).forEach(item => {
+            let row = `<tr>`;
+            if (type === 'reagents') {
+                const status = item.qty <= 2 ? 'low' : 'ok';
+                row += `<td>${item.name}</td><td>${item.cat}</td><td>${item.sku}</td>
+                        <td class="qty-controls">
+                            <button onclick="updateQty('${item.id}', -1)">-</button>
+                            <span>${item.qty}</span>
+                            <button onclick="updateQty('${item.id}', 1)">+</button>
+                        </td>
+                        <td><span class="stock-badge ${status}">${status.toUpperCase()}</span></td>`;
+            } else if (type === 'plasmids') {
+                row += `<td>${item.smed}</td><td>${item.gene}</td><td>${item.construct}</td><td>${item.anti}</td><td>${item.loc}</td>`;
+            } else {
+                row += `<td>${item.name}</td><td>${item.serial}</td><td>${item.loc}</td>`;
+            }
+            row += `<td><button onclick="deleteItem('${type}', '${item.id}')" style="color:red">Delete</button></td></tr>`;
+            tbody.innerHTML += row;
+        });
+    }
+
+    window.addItem = function(type) {
+        const id = Date.now().toString();
+        let data = { id };
+
+        if (type === 'reagents') {
+            data = { ...data, name: document.getElementById('itemName').value, sku: document.getElementById('catalogNum').value, cat: document.getElementById('category').value, qty: 1 };
+            if (!data.name) return;
+        } else if (type === 'plasmids') {
+            data = { ...data, smed: document.getElementById('pSmedId').value, gene: document.getElementById('pGeneName').value, construct: document.getElementById('pConstruct').value, anti: document.getElementById('pAntibiotic').value, loc: document.getElementById('pLocation').value };
+            if (!data.smed) return;
+        } else {
+            data = { ...data, name: document.getElementById('eqName').value, serial: document.getElementById('eqSerial').value, loc: document.getElementById('eqLocation').value };
+            if (!data.name) return;
+        }
+
+        set(ref(db, `${type}/${id}`), data);
+        // Clear inputs
+        document.querySelectorAll(`.controls input`).forEach(i => i.value = '');
+    };
+
+    window.updateQty = function(id, change) {
+        const itemRef = ref(db, `reagents/${id}`);
+        onValue(itemRef, (snap) => {
+            const current = snap.val();
+            if (current && current.qty + change >= 0) {
+                update(itemRef, { qty: current.qty + change });
+            }
+        }, { onlyOnce: true });
+    };
+
+    window.deleteItem = function(type, id) {
+        if(confirm("Permanently delete this entry?")) remove(ref(db, `${type}/${id}`));
+    };
+</script>
+</body>
+</html>
